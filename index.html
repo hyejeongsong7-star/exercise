@@ -108,8 +108,10 @@
                     </div>
                     <div class="flex items-center gap-4">
                         <div class="text-right">
-                            <span class="text-xs text-slate-400 block font-bold">일치 여부</span>
-                            <span id="matchStatusLabel" class="text-sm font-black text-rose-400">대기 중</span>
+                            <span class="text-xs text-slate-400 block font-bold">현재 동작 일치율</span>
+                            <div id="matchStatusLabel" class="text-lg font-black text-rose-400 font-digital tracking-wide flex items-center justify-end">
+                                0% <span class="text-[10px] bg-rose-500/25 px-1.5 py-0.5 rounded text-rose-300 ml-1.5">대기 중</span>
+                            </div>
                         </div>
                         <div id="matchingRing" class="w-10 h-10 rounded-full border-4 border-slate-700 flex items-center justify-center">
                             <i id="matchingIcon" class="fa-solid fa-hourglass-start text-xs text-slate-400"></i>
@@ -357,15 +359,16 @@
         // Verify if user's action matches the current required video action
         function verifyUserAction() {
             const targetProbability = currentPredictions[currentTargetAction] || 0;
+            // 실시간 일치율 백분율 계산
+            const targetPercent = Math.round(targetProbability * 100);
             const matchStatusLabel = document.getElementById('matchStatusLabel');
             const matchingRing = document.getElementById('matchingRing');
             const matchingIcon = document.getElementById('matchingIcon');
             
             // Threshold for successful gesture recognition is 75%
             if (targetProbability >= 0.75) {
-                // Correct Match
-                matchStatusLabel.textContent = "일치 완료!";
-                matchStatusLabel.className = "text-sm font-black text-green-400";
+                // Correct Match (일치율 75% 이상일 때 초록색 및 완료 문구 표시)
+                matchStatusLabel.innerHTML = `<span class="text-green-400 font-black text-xl font-digital">${targetPercent}%</span> <span class="text-[10px] bg-green-500/20 border border-green-500/30 px-1.5 py-0.5 rounded text-green-300 font-bold ml-1.5 animate-bounce">일치!</span>`;
                 
                 matchingRing.className = "w-10 h-10 rounded-full border-4 border-green-500 bg-green-500/20 flex items-center justify-center transition-all duration-300";
                 matchingIcon.className = "fa-solid fa-check text-xs text-green-400";
@@ -378,9 +381,8 @@
                     addScore(0.1);
                 }
             } else {
-                // Incorrect/Waiting Match
-                matchStatusLabel.textContent = "포즈 불일치";
-                matchStatusLabel.className = "text-sm font-black text-rose-400 animate-pulse";
+                // Incorrect/Waiting Match (일치율 75% 미만일 때 실시간 퍼센트 변동 및 불일치 문구 표시)
+                matchStatusLabel.innerHTML = `<span class="text-rose-400 font-black text-xl font-digital">${targetPercent}%</span> <span class="text-[10px] bg-rose-500/20 border border-rose-500/30 px-1.5 py-0.5 rounded text-rose-300 font-bold ml-1.5">불일치</span>`;
                 
                 matchingRing.className = "w-10 h-10 rounded-full border-4 border-rose-500 bg-rose-500/10 flex items-center justify-center transition-all duration-300";
                 matchingIcon.className = "fa-solid fa-xmark text-xs text-rose-400";
