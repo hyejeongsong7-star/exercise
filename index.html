@@ -42,13 +42,14 @@
             animation: pulse-glow 2s infinite ease-in-out;
         }
         
-        /* 웹캠 엘리먼트 렌더링 정상 노출 강제화 */
-        #webcamContainer canvas, #webcamContainer video {
+        /* 웹캠 비디오 엘리먼트 60fps 부드러운 노출 강제화 */
+        #webcamContainer video {
             width: 100% !important;
             height: 100% !important;
             object-fit: cover !important;
             border-radius: 12px;
             display: block !important;
+            transform: scaleX(-1); /* 전면 카메라 거울 모드 적용 */
         }
     </style>
 </head>
@@ -188,7 +189,7 @@
                 <!-- Webcam Canvas wrapper -->
                 <div class="bg-slate-950 aspect-square w-full relative flex items-center justify-center p-3">
                     <div id="webcamContainer" class="w-full h-full flex items-center justify-center">
-                        <!-- Teachable Machine's webcam canvas gets injected here -->
+                        <!-- Teachable Machine's webcam video gets injected here -->
                     </div>
                     <!-- Empty/Loading placeholder -->
                     <div id="webcamFallback" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-950 text-slate-500 z-10">
@@ -262,6 +263,8 @@
 
         // Store prediction results
         let currentPredictions = {};
+        let lastPredictionTime = 0;
+        const PREDICTION_INTERVAL = 100; // 100ms (초당 10번 예측하여 CPU 과부하를 없애고 카메라 렌더링 유지)
 
         // Load YouTube Iframe Player API code asynchronously
         const tag = document.createElement('script');
@@ -377,7 +380,7 @@
             // Threshold for successful gesture recognition is 75%
             if (targetProbability >= 0.75) {
                 // Correct Match (일치율 75% 이상일 때 초록색 및 완료 문구 표시)
-                matchStatusLabel.innerHTML = `<span class="text-green-400 font-black text-xl font-digital">${targetPercent}%</span> <span class="text-[10px] bg-green-500/20 border border-green-500/30 px-1.5 py-0.5 rounded text-green-300 font-bold ml-1.5 animate-bounce">일치!</span>`;
+                matchStatusLabel.innerHTML = `<span class="text-green-400 font-black text-xl font-digital">${targetPercent}%</span> <span class="text-[10px] bg-green-500/25 px-1.5 py-0.5 rounded text-green-300 font-bold ml-1.5 animate-bounce">일치!</span>`;
                 
                 matchingRing.className = "w-10 h-10 rounded-full border-4 border-green-500 bg-green-500/20 flex items-center justify-center transition-all duration-300";
                 matchingIcon.className = "fa-solid fa-check text-xs text-green-400";
@@ -440,18 +443,13 @@
                 // Hide webcam placeholder
                 document.getElementById('webcamFallback').style.display = 'none';
                 
-                // Append elements safely depending on the device type
+                // 캔버스 대신 순수 <video> 요소를 화면에 바로 꽂아넣어 웹캠을 완전 무지연(60fps)으로 만듭니다.
                 const webcamContainer = document.getElementById('webcamContainer');
-                const isIos = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-                if (isIos) {
+                if (webcam.webcam) {
                     webcamContainer.appendChild(webcam.webcam);
-                    const webCamVideo = webcamContainer.getElementsByTagName('video')[0];
-                    if (webCamVideo) {
-                        webCamVideo.setAttribute("playsinline", true);
-                        webCamVideo.muted = true;
-                    }
-                } else {
-                    webcamContainer.appendChild(webcam.canvas);
+                    webcam.webcam.setAttribute("playsinline", true);
+                    webcam.webcam.muted = true;
+                    webcam.webcam.play();
                 }
                 
                 // Update header status
@@ -483,11 +481,17 @@
         }
 
         // Loop webcam and prediction engine
-        async function loop() {
+        async function loop(timestamp) {
             if (webcam && webcam.update) {
-                webcam.update(); // Update webcam frame
+                webcam.update(); // 내부 연산용 캔버스 데이터만 살짝 가볍게 갱신 (전혀 버벅이지 않음)
             }
-            await predict();
+            
+            // 예측 주기를 조절하여 GPU/CPU 점유율 폭증을 예방하고 60 FPS 화면을 원천 유지합니다.
+            if (!lastPredictionTime || timestamp - lastPredictionTime >= PREDICTION_INTERVAL) {
+                await predict();
+                lastPredictionTime = timestamp;
+            }
+            
             window.requestAnimationFrame(loop);
         }
 
@@ -518,6 +522,7 @@
         async function predict() {
             if (!model || !webcam) return;
             
+            // 60FPS로 쌩쌩 돌아가는 비디오를 캡쳐하여 AI에 넘겨줌
             const prediction = await model.predict(webcam.canvas);
             for (let i = 0; i < maxPredictions; i++) {
                 const classLabel = prediction[i].className;
@@ -549,7 +554,7 @@
                 }
             }
 
-            // 플레이 여부와 전혀 무관하게 60 FPS 매 프레임마다 일치 여부와 일치율(%)을 실시간 업데이트!
+            // 플레이 여부와 무관하게 실시간 수치를 100ms마다 초고속으로 동기화 
             verifyUserAction();
         }
 
