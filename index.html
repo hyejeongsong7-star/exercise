@@ -11,6 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@300;500;700;900&display=swap');
         
@@ -39,6 +40,15 @@
         }
         .active-action-card {
             animation: pulse-glow 2s infinite ease-in-out;
+        }
+        
+        /* 웹캠 엘리먼트 렌더링 정상 노출 강제화 */
+        #webcamContainer canvas, #webcamContainer video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            border-radius: 12px;
+            display: block !important;
         }
     </style>
 </head>
@@ -176,12 +186,12 @@
                     <span class="text-xs bg-slate-800 px-2.5 py-1 rounded-md text-slate-400 font-bold">224 x 224 px</span>
                 </div>
                 <!-- Webcam Canvas wrapper -->
-                <div class="bg-slate-950 aspect-square w-full relative flex items-center justify-center">
-                    <div id="webcamContainer" class="w-full h-full object-cover [&>canvas]:w-full [&>canvas]:h-full [&>canvas]:rounded-b-none">
+                <div class="bg-slate-950 aspect-square w-full relative flex items-center justify-center p-3">
+                    <div id="webcamContainer" class="w-full h-full flex items-center justify-center">
                         <!-- Teachable Machine's webcam canvas gets injected here -->
                     </div>
                     <!-- Empty/Loading placeholder -->
-                    <div id="webcamFallback" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-950 text-slate-500">
+                    <div id="webcamFallback" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-950 text-slate-500 z-10">
                         <i class="fa-solid fa-video-slash text-4xl mb-3"></i>
                         <p class="text-xs">상단 시작 버튼 클릭 시 웹캠이 자동으로 활성화됩니다.</p>
                     </div>
@@ -302,9 +312,8 @@
                 if (player && player.getCurrentTime) {
                     const currentTime = player.getCurrentTime();
                     updateTargetAction(currentTime);
-                    verifyUserAction();
                 }
-            }, 200); // Check 5 times per second
+            }, 100); // Check 10 times per second for snappy sync
         }
 
         function stopGameLoop() {
@@ -373,12 +382,14 @@
                 matchingRing.className = "w-10 h-10 rounded-full border-4 border-green-500 bg-green-500/20 flex items-center justify-center transition-all duration-300";
                 matchingIcon.className = "fa-solid fa-check text-xs text-green-400";
 
-                // Add points only if it's not a generic REST state, or add less for REST
-                if (currentTargetAction !== "REST") {
-                    addScore(1); // Gradually increase score
-                } else {
-                    // Small points boost for maintaining correct resting posture
-                    addScore(0.1);
+                // Add points only if it's not a generic REST state, and player is actively playing
+                if (player && player.getPlayerState && player.getPlayerState() === YT.PlayerState.PLAYING) {
+                    if (currentTargetAction !== "REST") {
+                        addScore(1); // Gradually increase score
+                    } else {
+                        // Small points boost for maintaining correct resting posture
+                        addScore(0.1);
+                    }
                 }
             } else {
                 // Incorrect/Waiting Match (일치율 75% 미만일 때 실시간 퍼센트 변동 및 불일치 문구 표시)
@@ -426,9 +437,22 @@
                 await webcam.setup(); // Request permissions
                 await webcam.play();
                 
-                // Hide webcam placeholder and append webcam canvas
+                // Hide webcam placeholder
                 document.getElementById('webcamFallback').style.display = 'none';
-                document.getElementById('webcamContainer').appendChild(webcam.canvas);
+                
+                // Append elements safely depending on the device type
+                const webcamContainer = document.getElementById('webcamContainer');
+                const isIos = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+                if (isIos) {
+                    webcamContainer.appendChild(webcam.webcam);
+                    const webCamVideo = webcamContainer.getElementsByTagName('video')[0];
+                    if (webCamVideo) {
+                        webCamVideo.setAttribute("playsinline", true);
+                        webCamVideo.muted = true;
+                    }
+                } else {
+                    webcamContainer.appendChild(webcam.canvas);
+                }
                 
                 // Update header status
                 const webcamStatus = document.getElementById('webcamStatus');
@@ -460,7 +484,9 @@
 
         // Loop webcam and prediction engine
         async function loop() {
-            webcam.update(); // Update webcam frame
+            if (webcam && webcam.update) {
+                webcam.update(); // Update webcam frame
+            }
             await predict();
             window.requestAnimationFrame(loop);
         }
@@ -490,6 +516,8 @@
 
         // Predict active frames and update display probability bars
         async function predict() {
+            if (!model || !webcam) return;
+            
             const prediction = await model.predict(webcam.canvas);
             for (let i = 0; i < maxPredictions; i++) {
                 const classLabel = prediction[i].className;
@@ -520,6 +548,9 @@
                     }
                 }
             }
+
+            // 플레이 여부와 전혀 무관하게 60 FPS 매 프레임마다 일치 여부와 일치율(%)을 실시간 업데이트!
+            verifyUserAction();
         }
 
         // Page load triggers AI Initialization automatically
